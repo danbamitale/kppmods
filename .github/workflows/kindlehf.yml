@@ -1,0 +1,56 @@
+# KoKindle build of kppmods for kindlehf (Kindle Scribe, firmware 5.18+).
+# Output is the CMake install tree; KoKindle's tools/build-kppmods-ipk.sh packs it.
+# Artifacts expire after a day: kppmods has no licence, so builds are not kept public.
+name: kindlehf build
+
+on:
+  push:
+    branches: [kokindle]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes cmake librsvg2-bin patch python3 zstd
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.11.0
+          cache: npm
+
+      - name: Download koxtoolchain kindlehf
+        run: |
+          curl --fail --location --retry 3 \
+            https://github.com/koreader/koxtoolchain/releases/download/2026.08/kindlehf.tar.zst \
+            --output "$RUNNER_TEMP/kindlehf.tar.zst"
+          mkdir -p "$GITHUB_WORKSPACE/x-tools"
+          tar --zstd -xf "$RUNNER_TEMP/kindlehf.tar.zst" -C "$GITHUB_WORKSPACE"
+
+      - name: Initialize source dependencies
+        run: tools/build/init-dependencies.sh
+
+      - run: npm ci
+
+      - name: Configure, build, install
+        env:
+          KPPMODS_TOOLCHAIN_ROOT: ${{ github.workspace }}/x-tools/arm-kindlehf-linux-gnueabihf
+        run: |
+          cmake --preset kindlehf
+          cmake --build --preset kindlehf --parallel 4
+          cmake --install build/kindlehf
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kppmods-kindlehf
+          path: dist/kindlehf/
+          retention-days: 1
+          if-no-files-found: error
