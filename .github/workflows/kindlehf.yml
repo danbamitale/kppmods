@@ -20,7 +20,7 @@ jobs:
       - name: Install build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install --yes cmake librsvg2-bin patch python3 zstd
+          sudo apt-get install --yes cmake librsvg2-bin patch patchelf python3 zstd
 
       - uses: actions/setup-node@v4
         with:
@@ -47,6 +47,18 @@ jobs:
           cmake --preset kindlehf
           cmake --build --preset kindlehf --parallel 4
           cmake --install build/kindlehf
+
+      # Match the feed package, whose packager (needs the private eink-sdk) strips ELFs and
+      # points them at the SDK's libstdc++ under /var/run/eink-sdk.
+      - name: Strip and set RUNPATH
+        run: |
+          strip="$GITHUB_WORKSPACE/x-tools/arm-kindlehf-linux-gnueabihf/bin/arm-kindlehf-linux-gnueabihf-strip"
+          find dist/kindlehf -type f | while read -r f; do
+            head -c4 "$f" | grep -q ELF || continue
+            "$strip" --strip-unneeded "$f"
+            patchelf --set-rpath /var/run/eink-sdk/usr/lib:/var/run/eink-sdk/lib "$f"
+            echo "$f: $(patchelf --print-rpath "$f")"
+          done
 
       - uses: actions/upload-artifact@v4
         with:
